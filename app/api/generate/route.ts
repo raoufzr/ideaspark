@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import Anthropic from '@anthropic-ai/sdk'
 import { createSupabaseServerClient } from '@/lib/supabase'
 import { GenerateRequest, PLAN_LIMITS } from '@/types'
-
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,6 +9,11 @@ export async function POST(req: NextRequest) {
 
     if (!niche?.trim()) {
       return NextResponse.json({ error: 'Niche is required' }, { status: 400 })
+    }
+
+    const geminiKey = process.env.GEMINI_API_KEY
+    if (!geminiKey) {
+      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 })
     }
 
     // Check auth and usage limits
@@ -35,46 +37,57 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Build prompt
     const langInstruction = language === 'arabic'
       ? 'Generate all titles, hooks, and thumbnail concepts in Arabic language.'
       : 'Generate all content in English.'
 
-    const systemPrompt = `You are a YouTube strategy expert with deep knowledge of viral content, audience psychology, and platform algorithms. Generate creative, unique, high-quality video ideas.
+    const prompt = `You are a YouTube strategy expert with deep knowledge of viral content, audience psychology, and platform algorithms.
 
 ${langInstruction}
 
-Always respond with a valid JSON array of exactly 10 objects. No markdown, no explanation, just the JSON array.`
-
-    const userPrompt = `Generate 10 unique YouTube video ideas for:
+Generate 10 unique YouTube video ideas for:
 - Niche: ${niche}
 - Target Audience: ${audience || 'general audience'}
-- Content Goal: ${goal} (educate viewers / entertain / sell product or service)
+- Content Goal: ${goal}
 
-For each idea return a JSON object with these exact fields:
+Return ONLY a valid JSON array of exactly 10 objects. No markdown, no explanation, just the raw JSON array.
+
+Each object must have exactly these fields:
 {
-  "title": "clickbait-optimized title that creates curiosity without misleading",
-  "hook": "compelling first 15 seconds script that grabs attention immediately",
-  "thumbnail_concept": "visual description for the thumbnail - colors, text overlay, facial expression, props",
-  "estimated_views_potential": "low" | "medium" | "high",
-  "content_type": "tutorial" | "story" | "list" | "challenge"
-}
+  "title": "clickbait-optimized title that creates curiosity",
+  "hook": "compelling first 15 seconds script that grabs attention",
+  "thumbnail_concept": "visual description for thumbnail - colors, text overlay, expression",
+  "estimated_views_potential": "low" or "medium" or "high",
+  "content_type": "tutorial" or "story" or "list" or "challenge"
+}`
 
-Make titles irresistible, hooks dramatic, and thumbnails visually striking.`
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            temperature: 0.9,
+            maxOutputTokens: 4000,
+          }
+        })
+      }
+    )
 
-    const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 4000,
-      messages: [{ role: 'user', content: userPrompt }],
-      system: systemPrompt,
-    })
+    if (!response.ok) {
+      const err = await response.json()
+      throw new Error(err.error?.message || 'Gemini API error')
+    }
 
-    const content = message.content[0]
-    if (content.type !== 'text') throw new Error('Unexpected response type')
+    const data = await response.json()
+    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+
+    if (!text) throw new Error('No response from Gemini')
 
     let ideas
     try {
-      const text = content.text.trim()
       const jsonMatch = text.match(/\[[\s\S]*\]/)
       if (!jsonMatch) throw new Error('No JSON array found')
       ideas = JSON.parse(jsonMatch[0])
@@ -82,7 +95,7 @@ Make titles irresistible, hooks dramatic, and thumbnails visually striking.`
       throw new Error('Failed to parse AI response')
     }
 
-    // Save to DB if authenticated
+    // Save to DB and increment usage if authenticated
     if (session?.user) {
       await supabase.from('ideas').insert({
         user_id: session.user.id,
@@ -93,8 +106,10 @@ Make titles irresistible, hooks dramatic, and thumbnails visually striking.`
         ideas_json: ideas,
       })
 
-      // Increment usage counter
-      await supabase.rpc('increment_generations', { user_id: session.user.id })
+      await supabase
+        .from('users')
+        .update({ generations_used: supabase.rpc('increment_generations', { user_id: session.user.id }) })
+        .eq('id', session.user.id)
     }
 
     return NextResponse.json({ ideas })
