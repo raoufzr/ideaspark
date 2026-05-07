@@ -75,7 +75,9 @@ export default function DashboardPage() {
     if (res.ok) {
       const data = await res.json()
       setIdeas(data.ideas)
-      const uniqueNiches = [...new Set(data.ideas.map((r: IdeaRecord) => r.niche))] as string[]
+      const uniqueNiches = Array.from(
+  new Set(data.ideas.map((r: IdeaRecord) => r.niche))
+)
       setNiches(uniqueNiches)
     }
   }, [search, filterNiche])
