@@ -11,9 +11,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Niche is required' }, { status: 400 })
     }
 
-    const geminiKey = process.env.GEMINI_API_KEY
-    if (!geminiKey) {
-      return NextResponse.json({ error: 'Gemini API key not configured' }, { status: 500 })
+    const groqKey = process.env.GROQ_API_KEY
+    if (!groqKey) {
+      return NextResponse.json({ error: 'API key not configured' }, { status: 500 })
     }
 
     // Check auth and usage limits
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
         const limit = PLAN_LIMITS[user.plan as keyof typeof PLAN_LIMITS]
         if (user.generations_used >= limit) {
           return NextResponse.json({
-            error: `You've reached your ${user.plan} plan limit of ${limit} generations/month. Please upgrade to continue.`
+            error: `You've reached your ${user.plan} plan limit of ${limit} generations/month. Please upgrade.`
           }, { status: 429 })
         }
       }
@@ -41,50 +41,48 @@ export async function POST(req: NextRequest) {
       ? 'Generate all titles, hooks, and thumbnail concepts in Arabic language.'
       : 'Generate all content in English.'
 
-    const prompt = `You are a YouTube strategy expert with deep knowledge of viral content, audience psychology, and platform algorithms.
+    const systemPrompt = `You are a YouTube strategy expert. ${langInstruction} Always respond with a valid JSON array only. No markdown, no explanation, just the raw JSON array.`
 
-${langInstruction}
-
-Generate 10 unique YouTube video ideas for:
+    const userPrompt = `Generate 10 unique YouTube video ideas for:
 - Niche: ${niche}
 - Target Audience: ${audience || 'general audience'}
 - Content Goal: ${goal}
 
-Return ONLY a valid JSON array of exactly 10 objects. No markdown, no explanation, just the raw JSON array.
-
-Each object must have exactly these fields:
+Return a JSON array of exactly 10 objects, each with:
 {
-  "title": "clickbait-optimized title that creates curiosity",
-  "hook": "compelling first 15 seconds script that grabs attention",
-  "thumbnail_concept": "visual description for thumbnail - colors, text overlay, expression",
+  "title": "clickbait-optimized title",
+  "hook": "first 15 seconds script",
+  "thumbnail_concept": "visual description for thumbnail",
   "estimated_views_potential": "low" or "medium" or "high",
   "content_type": "tutorial" or "story" or "list" or "challenge"
 }`
 
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.9,
-            maxOutputTokens: 4000,
-          }
-        })
-      }
-    )
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${groqKey}`,
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        temperature: 0.9,
+        max_tokens: 4000,
+      })
+    })
 
     if (!response.ok) {
       const err = await response.json()
-      throw new Error(err.error?.message || 'Gemini API error')
+      throw new Error(err.error?.message || 'Groq API error')
     }
 
     const data = await response.json()
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text
+    const text = data.choices?.[0]?.message?.content
 
-    if (!text) throw new Error('No response from Gemini')
+    if (!text) throw new Error('No response from AI')
 
     let ideas
     try {
@@ -95,7 +93,7 @@ Each object must have exactly these fields:
       throw new Error('Failed to parse AI response')
     }
 
-    // Save to DB and increment usage if authenticated
+    // Save to DB if authenticated
     if (session?.user) {
       await supabase.from('ideas').insert({
         user_id: session.user.id,
@@ -108,7 +106,7 @@ Each object must have exactly these fields:
 
       await supabase
         .from('users')
-        .update({ generations_used: supabase.rpc('increment_generations', { user_id: session.user.id }) })
+        .update({ generations_used: supabase.rpc('increment_generations', { user_id: session.user.id }) as any })
         .eq('id', session.user.id)
     }
 
