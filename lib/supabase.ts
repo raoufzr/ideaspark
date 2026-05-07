@@ -8,6 +8,10 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_KEY!
 export const createSupabaseClient = () =>
   createClient(supabaseUrl, supabaseAnonKey)
 
+// Server-side Supabase client
+export const createSupabaseServerClient = () =>
+  createClient(supabaseUrl, supabaseAnonKey)
+
 // Admin client
 export const supabaseAdmin = createClient(
   supabaseUrl,
