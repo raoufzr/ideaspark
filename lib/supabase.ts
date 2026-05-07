@@ -1,6 +1,7 @@
+import { cookies } from 'next/headers'
 import { createClient } from '@supabase/supabase-js'
 import { createClientComponentClient, createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -11,7 +12,7 @@ export const createSupabaseClient = () => createClientComponentClient()
 
 // Server-side Supabase client (with cookies)
 export const createSupabaseServerClient = () =>
-  createServerComponentClient({ cookies })
+  createServerComponentClient({ cookies: () => cookies() })
 
 // Admin client (service role - server only)
 export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
