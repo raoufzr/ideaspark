@@ -1,11 +1,11 @@
 'use client'
-import { useState } from 'react'
+import { useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Zap, Mail, Lock, Eye, EyeOff, Loader2, Chrome } from 'lucide-react'
+import { Zap, Mail, Lock, Eye, EyeOff, Loader2 } from 'lucide-react'
 import { createSupabaseClient } from '@/lib/supabase'
 
-export default function AuthPage() {
+function AuthContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const plan = searchParams.get('plan')
@@ -58,9 +58,8 @@ export default function AuthPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-6 grid-bg">
       <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[500px] h-[500px] rounded-full bg-[#FF0000]/5 blur-[120px] pointer-events-none" />
-      
+
       <div className="relative w-full max-w-md">
-        {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2 mb-6">
             <div className="w-10 h-10 rounded-xl bg-[#FF0000] flex items-center justify-center">
@@ -77,7 +76,6 @@ export default function AuthPage() {
         </div>
 
         <div className="rounded-2xl border border-white/8 bg-white/3 p-8">
-          {/* Mode Toggle */}
           <div className="flex rounded-xl bg-white/5 p-1 mb-6">
             {(['signup', 'signin'] as const).map(m => (
               <button
@@ -92,7 +90,6 @@ export default function AuthPage() {
             ))}
           </div>
 
-          {/* Google */}
           <button
             onClick={handleGoogle}
             disabled={googleLoading}
@@ -115,7 +112,6 @@ export default function AuthPage() {
             <div className="flex-1 h-px bg-white/8" />
           </div>
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <label className="block text-xs text-white/40 uppercase tracking-wider font-mono mb-2">Email</label>
@@ -164,5 +160,19 @@ export default function AuthPage() {
         </p>
       </div>
     </div>
+  )
+}
+
+export default function AuthPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
+        <div className="w-10 h-10 rounded-xl bg-[#FF0000] animate-pulse flex items-center justify-center">
+          <Zap className="w-5 h-5 text-white fill-white" />
+        </div>
+      </div>
+    }>
+      <AuthContent />
+    </Suspense>
   )
 }
