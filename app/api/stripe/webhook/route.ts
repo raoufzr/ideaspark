@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
 
   switch (event.type) {
     case 'checkout.session.completed': {
-      const session = event.data.object as Stripe.CheckoutSession
+      const session = event.data.object as Stripe.Checkout.Session
       const { user_id, plan } = session.metadata!
 
       await supabaseAdmin.from('users').update({ plan }).eq('id', user_id)
